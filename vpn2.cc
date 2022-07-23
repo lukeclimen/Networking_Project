@@ -34,7 +34,12 @@ using namespace ns3;
 
 int main (int argc, char *argv[]) {
 
-    //Creating the two networks and the routers connecting them
+    /*
+     * SECTION 1:
+     * Creating the two networks and the routers connecting them
+     * structurally to one another, governing which connect to which
+     */
+
     NodeContainer network1, network2, routers;
 
     //Initialize each of the 3 "networks" as having 3 nodes (see above diagram)
@@ -66,8 +71,8 @@ int main (int argc, char *argv[]) {
     //Using Point-to-Point for the routers that are linking the two subnets
     PointToPointHelper pointToPoint;
 
-    pointToPoint.setDeviceAttribute("DataRate", StringValue("30Mbps"));
-    pointToPoint.setDeviceAttribute("Delay", StringValue("10ms"));
+    pointToPoint.SetDeviceAttribute("DataRate", StringValue("30Mbps"));
+    pointToPoint.SetDeviceAttribute("Delay", StringValue("10ms"));
     
     //Installing the LANs with their data transmission stats
     NetDeviceContainer link1, link2;
@@ -77,6 +82,54 @@ int main (int argc, char *argv[]) {
     //link2 is comprised of the router from LAN2 and the "linking router", {r1, r2}
     link2 = pointToPoint.Install(routers.Get(1), routers.Get(2));
 
+    /*
+     * SECTION 2:
+     * Setting up the IP addresses of the different nodes
+     * and aggregating IP/TCP/UDP functionality
+     * 
+     */
+
+    InternetStackHelper iStackHelp;
+
+    iStackHelp.Install(network1);
+    iStackHelp.Install(network2);
+    iStackHelp.Install(routers.Get(1));
+
+    Ipv4AddressHelper ipv4;
+    Ipv4InterfaceContainer lan1Subnet, lan2Subnet, link1Subnet, link2Subnet;
     
+    //Setting up the IP addresses for the two LAN subnets
+    ipv4.SetBase("10.1.1.0", "255.255.255.0");
+    lan1Subnet = ipv4.Assign(lan1);
+
+    ipv4.SetBase("10.1.2.0", "255.255.255.0");
+    lan2Subnet = ipv4.Assign(lan2);
+
+    //Setting up the IP addresses for the two router link subnets
+    //Note these subnets have less specific IP address prefixes
+    ipv4.SetBase("10.1.100.0", "255.255.255.0");
+    link1Subnet = ipv4.Assign(link1);
+
+    ipv4.SetBase("10.1.200.0", "255.255.255.0");
+    link2Subnet = ipv4.Assign(link2);
+
+    /*
+     * Because Ipv4AddressHelper simply increments the address numbers, 
+     * our nodes should have the following addresses:
+     * 
+     * n0: 10.1.1.1
+     * n1: 10.1.1.2
+     * n2: 10.1.1.3
+     * 
+     * n3: 10.1.2.1
+     * n4: 10.1.2.2
+     * n5: 10.1.2.3
+     *  
+     * r0: 10.1.1.4,     10.1.100.1
+     * r1: 10.1.100.2,   10.1.200.1
+     * r2: 10.1.2.4,     10.1.200.2
+     */
+
+
 
 }
