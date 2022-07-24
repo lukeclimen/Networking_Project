@@ -1,3 +1,16 @@
+/*
+ * This program uses the examples virtual-net-device.cc, 
+ * udp-echo.cc and simple-global-routing.cc as a basis. A diagram 
+ * can be found below describing the physical network that this 
+ * simulation aims to replicate. The simulation will provide 
+ * insight to the benefits of the IP security protocol to create 
+ * a virtual private network (VPN). In WireShark, it will be 
+ * shown that packets sent and received by nodes outside of the 
+ * VPN are visible to packet sniffers, but traffic at nodes 
+ * within the VPN are not visible.
+ */
+
+
 /* Network topology
  *                       
  *
@@ -53,7 +66,7 @@ int main (int argc, char *argv[]) {
     //Treating network 1 and network2 as LANs, we can set up their networks to
     //have the same data transmission values
     lanCSMA.SetChannelAttribute("DataRate", StringValue("100Mbps"));
-    lanCSMA.SetChannelAttribute("Delay", StringValue("2ms"));
+    lanCSMA.SetChannelAttribute("Delay", TimeValue (MilliSeconds (2)));
 
     //Adding the routers on each end into their respective LANs
     network1.Add(routers.Get(0));
@@ -72,7 +85,7 @@ int main (int argc, char *argv[]) {
     PointToPointHelper pointToPoint;
 
     pointToPoint.SetDeviceAttribute("DataRate", StringValue("30Mbps"));
-    pointToPoint.SetDeviceAttribute("Delay", StringValue("10ms"));
+    pointToPoint.SetChannelAttribute("Delay", TimeValue(MilliSeconds(2)));
     
     //Installing the LANs with their data transmission stats
     NetDeviceContainer link1, link2;
@@ -84,9 +97,8 @@ int main (int argc, char *argv[]) {
 
     /*
      * SECTION 2:
-     * Setting up the IP addresses of the different nodes
-     * and aggregating IP/TCP/UDP functionality
-     * 
+     * Setting up the IP addresses of the different nodes and aggregating IP/TCP/UDP 
+     * functionality. Also add sockets for sending and receiving UDP packets
      */
 
     InternetStackHelper iStackHelp;
@@ -113,6 +125,9 @@ int main (int argc, char *argv[]) {
     ipv4.SetBase("10.1.200.0", "255.255.255.0");
     link2Subnet = ipv4.Assign(link2);
 
+    //Create routing tables for all of the nodes in the network
+    Ipv4GlobalRoutingHelper :: PopulateRoutingTables();
+
     /*
      * Because Ipv4AddressHelper simply increments the address numbers, 
      * our nodes should have the following addresses:
@@ -128,6 +143,45 @@ int main (int argc, char *argv[]) {
      * r0: 10.1.1.4,     10.1.100.1
      * r1: 10.1.100.2,   10.1.200.1
      * r2: 10.1.2.4,     10.1.200.2
+     */
+
+    //We will set up n0 from LAN #1 to be a server for UDP datagrams
+    Address serverAddress = Address(lan1Subnet.GetAddress(0));
+    uint16_t serverListenerPort = 9;  // Echo port number from RFC 863
+
+    UdpEchoServerHelper server(serverListenerPort);
+    ApplicationContainer apps = server.Install(network1.Get(0));
+    
+    apps.Start(Seconds(1.0));
+    apps.Stop(Seconds(10.0));
+
+    //We will set up n3 from LAN #2 to be a client sending UDP datagrams
+    uint32_t packetSize = 1024;
+    uint32_t maxPacketCount = 1;
+    Time interPacketInterval = Seconds(1.);
+
+    UdpEchoClientHelper client(serverAddress, serverListenerPort);
+    client.SetAttribute ("MaxPackets", UintegerValue (maxPacketCount));
+    client.SetAttribute ("Interval", TimeValue (interPacketInterval));
+    client.SetAttribute ("PacketSize", UintegerValue (packetSize));
+    apps = client.Install(network2.Get(0));
+    apps.Start(Seconds(2.0));
+    apps.Stop(Seconds(10.0));
+
+    /*
+     * SECTION 3:
+     * Creating a mock VPN using IPsec. We are treating LAN #1 and LAN #2 as two entities
+     * remote from each other that wish to be connected via VPN. In this project, the router
+     * r1 that connects the two LAN networks can represent the internet, and there can be n
+     * point-to-point connections that are abstracted into r1.
+     * 
+     * UDP packets will be sent and received from two of the 6 nodes, one from each network
+     * and secured as they travel through their LAN's router (r0 or r2), and then decrypted 
+     * once the other LAN's router receives it. The router representing the internet (r1) 
+     * will be unable to see the contents of the packets using the IPsec ESP protocol.
+     * 
+     * In order for this to work, both LAN routers must maintain state information about their
+     * two security associations (SA) with the internet (one for each direction).
      */
 
 
