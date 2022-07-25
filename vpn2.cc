@@ -1,6 +1,10 @@
 /*
- * This program uses the examples virtual-net-device.cc, 
- * udp-echo.cc and simple-global-routing.cc as a basis. A diagram 
+ * This program uses the following examples from the groupset provided with NS-3:
+ *   -  virtual-net-device.cc
+ *   -  udp-echo.cc
+ *   -  simple-global-routing.cc
+ *   -  main-packet-header.cc
+ * as a basis point for the creation of the structure. A diagram 
  * can be found below describing the physical network that this 
  * simulation aims to replicate. The simulation will provide 
  * insight to the benefits of the IP security protocol to create 
@@ -15,18 +19,20 @@
  *                       
  *
  *      n0-------                           ------n3
- *               \                         /
- *                \                       /
+ *              |                           |
+ *              |                           |
  *      n1--------r0---------r1----------r2-------n4
- *                /                       \
- *               /                         \
+ *              |                           |
+ *              |                           |
  *      n2-------                           ------n5
  *
  * 
  *  {n0, n1, n2, r0} are the set of nodes comprising LAN #1
  *  {n3, n4, n5, r2} are the set of nodes comrpising LAN #2
  *  LAN #1 is connected to LAN #2 through the routers {r0, r1, r2}
- *  where r1 is the link between the two subnets in this network
+ *  where r1 is the link between the two subnets in this network.
+ *  For the purposes of this project, assume that r1 is an abstraction
+ *  of n point-to-point routers through which this connection is moving.
  * 
  */
 
@@ -35,6 +41,7 @@
 #include <string>
 #include <cassert>
 #include "ns3/csma-module.h"
+#include "ns3/header.h"
 #include "ns3/ipv4-global-routing-helper.h"
 #include "ns3/core-module.h"
 #include "ns3/network-module.h"
@@ -44,6 +51,78 @@
 
 
 using namespace ns3;
+
+/*
+ * SECTION 3:
+ * Creating a mock VPN using IPsec. We are treating LAN #1 and LAN #2 as two entities
+ * remote from each other that wish to be connected via VPN. In this project, the router
+ * r1 that connects the two LAN networks can represent the internet, and there can be n
+ * point-to-point connections that are abstracted into r1.
+ * 
+ * UDP packets will be sent and received from two of the 6 nodes, one from each network
+ * and secured as they travel through their LAN's router (r0 or r2), and then decrypted 
+ * once the other LAN's router receives it. The router representing the internet (r1) 
+ * will be unable to see the contents of the packets using the IPsec ESP protocol.
+ * 
+ * In order for this to work, both LAN routers must maintain state information about their
+ * two security associations (SA) with the internet (one for each direction).
+ */
+
+class Encrypt : public Header {
+    public:
+        Encrypt();
+        virtual ~Encrypt();
+
+        void EncryptData(uint128_t data, uint128_t key);
+        static TypeId GetTypeId (void);
+    private:
+        u_int16_t key = 123;
+        u_int16_t securePayload;
+
+};
+
+//Constructor and destructor
+Encrypt::Encrypt() {}
+Encrypt::~Encrypt() {}
+
+TypeId Encrypt::GetTypeId (void) {
+        static TypeId tid = TypeId ("ns3::Encrypt")
+        .SetParent<Header> ()
+        .AddConstructor<Encrypt> ()
+        ;
+        return tid;
+}
+
+void Encrypt::EncryptData(uint16_t data, uint16_t key) {
+    securePayload = data + key;
+}
+
+class Decrypt {
+    public:
+        Decrypt();
+        virtual ~Decrypt();
+        void DecryptData (uint128_t securePayload);
+        static TypeId GetTypeId (void);
+    private:
+        u_int16_t key = 123;
+        u_int16_t data;
+};
+
+//Constructor and destructor
+Decrypt::Decrypt() {}
+Decrypt::~Decrypt() {}
+
+TypeId Decrypt::GetTypeId (void) {
+        static TypeId tid = TypeId ("ns3::Decrypt")
+        .SetParent<Header> ()
+        .AddConstructor<Decrypt> ()
+        ;
+        return tid;
+}
+
+uint16_t Decrypt::DecryptData(void) const {
+    return securePayload - key;
+}
 
 int main (int argc, char *argv[]) {
 
@@ -100,7 +179,7 @@ int main (int argc, char *argv[]) {
      * Setting up the IP addresses of the different nodes and aggregating IP/TCP/UDP 
      * functionality. Also add sockets for sending and receiving UDP packets
      */
-
+    
     InternetStackHelper iStackHelp;
 
     iStackHelp.Install(network1);
@@ -155,7 +234,7 @@ int main (int argc, char *argv[]) {
     apps.Start(Seconds(1.0));
     apps.Stop(Seconds(10.0));
 
-    //We will set up n3 from LAN #2 to be a client sending UDP datagrams
+    //We will set up n5 from LAN #2 to be a client sending UDP datagrams
     uint32_t packetSize = 1024;
     uint32_t maxPacketCount = 1;
     Time interPacketInterval = Seconds(1.);
@@ -164,26 +243,20 @@ int main (int argc, char *argv[]) {
     client.SetAttribute ("MaxPackets", UintegerValue (maxPacketCount));
     client.SetAttribute ("Interval", TimeValue (interPacketInterval));
     client.SetAttribute ("PacketSize", UintegerValue (packetSize));
-    apps = client.Install(network2.Get(0));
+    apps = client.Install(network2.Get(2));
     apps.Start(Seconds(2.0));
     apps.Stop(Seconds(10.0));
+    client.SetFill(apps.Get(0), "Óàççê›ÒêíçÞ{");
+    
 
-    /*
-     * SECTION 3:
-     * Creating a mock VPN using IPsec. We are treating LAN #1 and LAN #2 as two entities
-     * remote from each other that wish to be connected via VPN. In this project, the router
-     * r1 that connects the two LAN networks can represent the internet, and there can be n
-     * point-to-point connections that are abstracted into r1.
-     * 
-     * UDP packets will be sent and received from two of the 6 nodes, one from each network
-     * and secured as they travel through their LAN's router (r0 or r2), and then decrypted 
-     * once the other LAN's router receives it. The router representing the internet (r1) 
-     * will be unable to see the contents of the packets using the IPsec ESP protocol.
-     * 
-     * In order for this to work, both LAN routers must maintain state information about their
-     * two security associations (SA) with the internet (one for each direction).
-     */
+    //Add tracing to this program so that the packets can be seen in Wireshark
+    AsciiTraceHelper ascii;
+    pointToPoint.EnableAsciiAll(ascii.CreateFileStream("vpn.tr"));
+    pointToPoint.EnablePcapAll("vpn");
 
+    Simulator::Stop(Seconds(20));
+    Simulator::Run();
 
-
+    Simulator::Destroy();
+    return 0;
 }

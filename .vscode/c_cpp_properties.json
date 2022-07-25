@@ -11,7 +11,8 @@
             "compilerPath": "/usr/bin/gcc",
             "cStandard": "gnu17",
             "cppStandard": "gnu++17",
-            "intelliSenseMode": "linux-gcc-x64"
+            "intelliSenseMode": "linux-gcc-x64",
+            "compileCommands": "/home/jukebox/ns-allinone-3.36.1/ns-3.36.1/cmake-cache/compile_commands.json"
         }
     ],
     "version": 4
